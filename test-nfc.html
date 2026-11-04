@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>Test de lecture NFC</title>
+<style>
+:root {
+  --paper: #edf0ec; --surface: #fff; --hover: #f3f6f3;
+  --ink: #14231e; --ink-2: #4a5a54; --ink-3: #66756f;
+  --line: #d6ddd7; --line-strong: #b9c5be;
+  --mask: #0c5c47; --mask-strong: #08493a; --mask-soft: #dcebe4; --mask-ink: #0a4535; --on-mask: #fff;
+  --gold: #e0a81f; --warn-ink: #7a4a00; --warn-soft: #fbebcb; --bad: #b3261e; --bad-soft: #fbe3e0;
+  --shadow: 0 1px 2px rgb(20 35 30 / .06), 0 10px 28px rgb(20 35 30 / .10);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0f1613; --surface: #17211d; --hover: #1c2823;
+    --ink: #e6eee9; --ink-2: #aab9b2; --ink-3: #8a9a92;
+    --line: #2a3832; --line-strong: #40524a;
+    --mask: #4cc29d; --mask-strong: #6fd3b3; --mask-soft: #173a2f; --mask-ink: #8fe0c4; --on-mask: #04231a;
+    --gold: #f0b93a; --warn-ink: #f2c06a; --warn-soft: #3a2b0e; --bad: #ff8f86; --bad-soft: #3d1b18;
+    --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 10px 28px rgb(0 0 0 / .45);
+  }
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 400 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  padding: max(20px, env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom));
+}
+main { max-width: 520px; margin: 0 auto; display: grid; gap: 14px; }
+h1, h2, p, ul, dl, dd { margin: 0; padding: 0; }
+ul { list-style: none; }
+button, input, summary { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2.5px solid var(--mask); outline-offset: 2px; }
+.ico { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+header { display: grid; gap: 6px; padding: 6px 2px 2px; }
+h1 { font-size: 27px; line-height: 1.15; font-weight: 780; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; }
+h1 .ico { width: 28px; height: 28px; color: var(--mask); stroke-width: 1.9; }
+.lead { color: var(--ink-2); }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: grid; gap: 12px; }
+h2 { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+
+/* vérifications */
+.checks { display: grid; gap: 8px; }
+.checks li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; }
+.checks .ico { width: 22px; height: 22px; stroke-width: 2.3; margin-top: 1px; }
+.checks .yes .ico { color: var(--mask); }
+.checks .no .ico { color: var(--bad); }
+.checks small { display: block; color: var(--ink-2); font-size: 14px; margin-top: 2px; }
+.verdict { padding: 10px 12px; border-radius: 12px; font-weight: 600; background: var(--mask-soft); color: var(--mask-ink); }
+.verdict.bad { background: var(--bad-soft); color: var(--bad); }
+
+/* lecteur */
+.slot { position: relative; width: 104px; margin: 10px auto 18px; }
+.slot-card {
+  position: relative; z-index: 1; aspect-ratio: 644 / 1024; border-radius: 6.2% / 3.9%;
+  border: 2px dashed var(--line-strong); display: grid; place-items: center; color: var(--ink-3);
+  transition: border-color .2s, box-shadow .2s;
+}
+.slot-card .ico { width: 36px; height: 36px; stroke-width: 1.6; }
+.waves i { position: absolute; inset: 0; border: 2px solid var(--gold); border-radius: 6.2% / 3.9%; opacity: 0; pointer-events: none; }
+.slot[data-state="waiting"] .slot-card { border-style: solid; border-color: var(--gold); box-shadow: var(--shadow); }
+.slot[data-state="waiting"] .waves i { animation: wave 2.7s cubic-bezier(.2, .6, .3, 1) infinite; }
+.slot[data-state="waiting"] .waves i:nth-child(2) { animation-delay: .9s; }
+.slot[data-state="waiting"] .waves i:nth-child(3) { animation-delay: 1.8s; }
+@keyframes wave { 0% { transform: scale(1); opacity: .8; } 100% { transform: scale(1.28); opacity: 0; } }
+.slot[data-state="ok"] .slot-card { border-style: solid; border-color: var(--mask); color: var(--mask); box-shadow: var(--shadow); animation: pop .35s cubic-bezier(.3, 1.4, .5, 1); }
+@keyframes pop { 0% { transform: scale(.93); } 100% { transform: scale(1); } }
+.slot[data-state="bad"] .slot-card { border-style: solid; border-color: var(--bad); color: var(--bad); }
+.badge {
+  position: absolute; z-index: 2; right: -14px; bottom: -14px; width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--mask); color: var(--on-mask); box-shadow: 0 0 0 4px var(--surface);
+  transform: scale(0); transition: transform .25s cubic-bezier(.3, 1.6, .5, 1);
+}
+.badge .ico { width: 20px; height: 20px; stroke-width: 2.4; }
+.slot[data-state="ok"] .badge, .slot[data-state="bad"] .badge { transform: scale(1); }
+.slot[data-state="bad"] .badge { background: var(--bad); color: var(--surface); }
+.slot .badge .when-bad, .slot[data-state="bad"] .badge .when-ok { display: none; }
+.slot[data-state="bad"] .badge .when-bad { display: block; }
+
+.status { text-align: center; font-weight: 650; font-size: 18px; line-height: 1.3; }
+.explain { text-align: center; color: var(--ink-2); font-size: 15px; }
+.explain:empty, .status:empty { display: none; }
+.explain b { color: var(--ink); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 50px; padding: 0 18px;
+  border-radius: 13px; border: 1px solid var(--line-strong); background: var(--surface); font-weight: 680; font-size: 16.5px;
+}
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn-primary { background: var(--mask); border-color: var(--mask); color: var(--on-mask); }
+.btn-sm { width: auto; min-height: 38px; padding: 0 13px; font-size: 14.5px; border-radius: 11px; }
+
+/* résultat */
+.result { display: grid; gap: 10px; border-top: 1px dashed var(--line-strong); padding-top: 14px; }
+.result dt { font-size: 13px; color: var(--ink-3); }
+.result dd { font-family: var(--mono); font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.result dd.big { font-size: 26px; letter-spacing: .01em; color: var(--mask-ink); }
+@media (prefers-color-scheme: dark) { .result dd.big { color: var(--mask); } }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.note { font-size: 14px; color: var(--ink-2); }
+.note.warn { background: var(--warn-soft); color: var(--warn-ink); padding: 9px 12px; border-radius: 11px; }
+.compare { font-size: 14.5px; color: var(--ink-2); background: var(--hover); border-radius: 12px; padding: 10px 12px; }
+
+/* historique */
+.history { display: grid; gap: 0; font-family: var(--mono); font-size: 13.5px; }
+.history li { display: grid; grid-template-columns: 74px 1fr; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); color: var(--ink-2); overflow-wrap: anywhere; }
+.history li:first-child { border-top: 0; }
+.history b { color: var(--ink); font-weight: 600; }
+
+/* outils */
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
+summary { padding: 15px 16px; font-weight: 650; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; font-size: 22px; line-height: 1; color: var(--ink-3); }
+details[open] summary::after { content: "–"; }
+.tools { padding: 0 16px 16px; display: grid; gap: 18px; }
+.tool { display: grid; gap: 8px; }
+.tool label { font-weight: 650; font-size: 15px; }
+.tool input {
+  width: 100%; height: 46px; padding: 0 13px; border-radius: 12px; border: 1px solid var(--line-strong);
+  background: var(--paper); font: 500 17px var(--mono); letter-spacing: .02em;
+}
+.tool input:focus { outline: 2.5px solid var(--mask); outline-offset: 0; border-color: transparent; }
+.out { min-height: 22px; font-size: 15px; color: var(--ink-2); overflow-wrap: anywhere; }
+.out b { font-weight: 700; color: var(--ink); }
+.out b.m { font-family: var(--mono); font-size: 17px; }
+.out.bad { color: var(--bad); }
+footer { text-align: center; color: var(--ink-3); font-size: 13.5px; padding: 4px 8px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-card" viewBox="0 0 24 24"><rect x="3.5" y="3" width="11.5" height="18" rx="2.6"/><path d="M18.2 8.2a5.2 5.2 0 010 7.6"/><path d="M21 5.6a9 9 0 010 12.8"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-bang" viewBox="0 0 24 24"><path d="M12 6v8"/><circle cx="12" cy="18" r=".6"/></symbol>
+</svg>
+
+<main>
+  <header>
+    <h1><svg class="ico"><use href="#i-card"/></svg>Test de lecture NFC</h1>
+    <p class="lead">Vérifie que ton téléphone lit tes cartes RFID, et à quoi ressemble leur numéro dans le fichier CSV.</p>
+  </header>
+
+  <section class="panel" aria-labelledby="h-tel">
+    <h2 id="h-tel">1 · Ton téléphone</h2>
+    <ul class="checks" id="checks"></ul>
+    <p class="verdict" id="verdict" role="status"></p>
+  </section>
+
+  <section class="panel" aria-labelledby="h-lire">
+    <h2 id="h-lire">2 · Lire une carte</h2>
+    <div class="slot" id="slot" data-state="idle">
+      <div class="waves" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="slot-card"><svg class="ico" aria-hidden="true"><use href="#i-card"/></svg></div>
+      <span class="badge" aria-hidden="true">
+        <svg class="ico when-ok"><use href="#i-check"/></svg><svg class="ico when-bad"><use href="#i-bang"/></svg>
+      </span>
+    </div>
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+    <p class="explain" id="explain" aria-live="polite"></p>
+    <button class="btn btn-primary" id="go" type="button">Lire une carte</button>
+
+    <dl class="result" id="result" hidden>
+      <div><dt>Numéro de série de la carte</dt><dd id="r-uid"></dd></div>
+      <div>
+        <dt>ID pour le fichier CSV</dt>
+        <div class="row"><dd class="big" id="r-id"></dd><button class="btn btn-sm" id="copy" type="button">Copier</button></div>
+      </div>
+      <p class="note warn" id="r-warn" hidden></p>
+      <p class="compare">Pour valider&nbsp;: pose une carte <b>déjà enregistrée</b> dans ton CSV. Si l'ID affiché est le même que dans le fichier, ton téléphone peut remplacer le lecteur du Raspberry.</p>
+    </dl>
+
+    <ul class="history" id="history" aria-label="Dernières lectures" hidden></ul>
+  </section>
+
+  <details>
+    <summary>Outils&nbsp;: calculer ou décoder un numéro</summary>
+    <div class="tools">
+      <div class="tool">
+        <label for="uid-in">Numéro de série → ID du CSV</label>
+        <input id="uid-in" inputmode="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="04:A1:B2:C3">
+        <p class="out" id="uid-out" aria-live="polite"></p>
+        <p class="note">Le numéro de série (UID) est celui qu'affiche une appli NFC (NFC Tools, NXP TagInfo…). 4 ou 7 octets, avec ou sans «&nbsp;:&nbsp;».</p>
+      </div>
+      <div class="tool">
+        <label for="id-in">ID du CSV → type de carte</label>
+        <input id="id-in" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="584202156213">
+        <p class="out" id="id-out" aria-live="polite"></p>
+        <p class="note">Colle un ID de ton fichier <code>cartes_rfid.csv</code>&nbsp;: on en déduit le numéro de série et le genre de puce.</p>
+      </div>
+    </div>
+  </details>
+
+  <footer>Rien n'est envoyé nulle part&nbsp;: tout se passe dans ton navigateur.</footer>
+</main>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const hex2 = (n) => n.toString(16).toUpperCase().padStart(2, '0');
+  const fmtUid = (bytes) => bytes.map(hex2).join(':');
+  const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  /* ── Même calcul que le lecteur du Raspberry (bibliothèque mfrc522 : SimpleMFRC522.read_id) ──
+     Le RC522 renvoie la 1re étape d'anticollision : 4 octets + 1 octet de contrôle (BCC = XOR des 4),
+     lus comme un seul nombre de 5 octets. Une puce à 7 ou 10 octets y apparaît sous la forme
+     0x88 + ses 3 premiers octets (0x88 = « suite de l'UID au prochain niveau »). */
+  function parseUid(text) {
+    const clean = String(text).trim().replace(/^0x/i, '').replace(/[\s:.\-]/g, '');
+    if (!clean || clean.length % 2 || /[^0-9a-f]/i.test(clean)) return null;
+    return clean.match(/../g).map((h) => parseInt(h, 16));
+  }
+  function cardId(bytes) {
+    if (!bytes || ![4, 7, 10].includes(bytes.length)) return null;
+    const first = bytes.length === 4 ? bytes : [0x88, bytes[0], bytes[1], bytes[2]];
+    const bcc = first[0] ^ first[1] ^ first[2] ^ first[3];
+    return [...first, bcc].reduce((n, b) => n * 256n + BigInt(b), 0n).toString();
+  }
+  function decodeId(text) {
+    const s = String(text).trim();
+    if (!/^\d+$/.test(s)) return { error: 'Un ID est un nombre (chiffres seulement).' };
+    let n = BigInt(s);
+    if (n >= 2n ** 40n) return { error: 'Ce nombre est trop grand pour un ID produit par le lecteur (5 octets maximum).' };
+    const b = [];
+    for (let i = 0; i < 5; i++) { b.unshift(Number(n & 255n)); n >>= 8n; }
+    if ((b[0] ^ b[1] ^ b[2] ^ b[3]) !== b[4]) return { error: "Octet de contrôle incorrect\u00A0: ce nombre n'a pas été produit par ce lecteur." };
+    return b[0] === 0x88 ? { long: true, bytes: b.slice(1, 4) } : { long: false, bytes: b.slice(0, 4) };
+  }
+
+  /* ── 1 · Le téléphone ─────────────────────────────────────────────────────── */
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  let isTop = true; try { isTop = window.top === window.self; } catch (e) { isTop = false; }
+  const hasNfc = 'NDEFReader' in window;
+  const checks = [
+    { ok: window.isSecureContext, label: 'Connexion sécurisée (https)',
+      hint: "Ouvre la page avec une adresse qui commence par https://. Sans cela, le navigateur bloque le NFC." },
+    { ok: hasNfc, label: 'Navigateur compatible',
+      hint: isIOS ? "Sur iPhone et iPad, aucun navigateur ne peut lire le NFC depuis une page web."
+                  : "Seul Chrome sur Android sait lire le NFC depuis une page web (pas Firefox, Samsung Internet ni Safari)." },
+    { ok: isTop, label: 'Page ouverte directement',
+      hint: "Ouvre la page seule, pas à l'intérieur d'une autre page\u00A0: le NFC n'y est pas disponible." },
+  ];
+  $('#checks').innerHTML = checks.map((c) =>
+    `<li class="${c.ok ? 'yes' : 'no'}"><svg class="ico" aria-hidden="true"><use href="#i-${c.ok ? 'check' : 'x'}"/></svg>` +
+    `<span>${c.label}${c.ok ? '' : `<small>${c.hint}</small>`}</span></li>`).join('');
+  const ready = checks.every((c) => c.ok);
+  const verdict = $('#verdict');
+  verdict.textContent = ready ? "Tout est prêt\u00A0: touche «\u00A0Lire une carte\u00A0», puis approche une carte du dos du téléphone."
+                              : "Ce navigateur ne peut pas lire le NFC\u00A0: essaie avec Chrome sur un téléphone Android.";
+  verdict.classList.toggle('bad', !ready);
+  $('#go').disabled = !ready;
+
+  /* ── 2 · Lire une carte ───────────────────────────────────────────────────── */
+  const slot = $('#slot'), status = $('#status'), explain = $('#explain'), go = $('#go');
+  const history = [];
+  let ctl = null;
+
+  function setState(state, title = '', text = '') {
+    slot.dataset.state = state;
+    status.textContent = title;
+    explain.innerHTML = text;
+  }
+  function stopScan() { if (ctl) { ctl.abort(); ctl = null; } go.textContent = 'Lire une carte'; }
+
+  function showRead(serial) {
+    const bytes = parseUid(serial);
+    const id = cardId(bytes);
+    if (!id) {
+      setState('bad', 'Carte détectée, mais sans numéro exploitable',
+        serial ? `Numéro reçu\u00A0: <b>${esc(serial)}</b>. Il n'a pas 4, 7 ou 10 octets.` : "Le navigateur n'a pas fourni de numéro de série pour cette puce.");
+      return;
+    }
+    const long = bytes.length > 4;
+    $('#r-uid').textContent = fmtUid(bytes);
+    $('#r-id').textContent = id;
+    const warn = $('#r-warn');
+    warn.hidden = !long;
+    if (long) warn.textContent = `Cette puce a un numéro de ${bytes.length} octets\u00A0: le lecteur du Raspberry n'en lit que les 3 premiers (${fmtUid(bytes.slice(0, 3))}). Deux cartes différentes peuvent donc, rarement, avoir le même ID\u00A0: l'appli te préviendra à l'association.`;
+    $('#result').hidden = false;
+    history.unshift({ t: new Date(), uid: fmtUid(bytes), id });
+    history.length = Math.min(history.length, 8);
+    const hh = $('#history');
+    hh.hidden = false;
+    hh.innerHTML = history.map((h) => `<li><span>${h.t.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).slice(0, 8)}</span><span><b>${h.id}</b> ← ${h.uid}</span></li>`).join('');
+    setState('ok', 'Carte lue', 'Tu peux en poser une autre.');
+    if (navigator.vibrate) navigator.vibrate(60);
+  }
+
+  function onScanError(e) {
+    const name = e && e.name;
+    if (name === 'AbortError') return;
+    ctl = null; go.textContent = 'Lire une carte';
+    const msg = {
+      NotAllowedError: ['Autorisation refusée', "Touche «\u00A0Lire une carte\u00A0», puis <b>Autoriser</b> quand Chrome le demande. Tu peux aussi l'autoriser dans les réglages du site."],
+      NotSupportedError: ['NFC indisponible', "Ce téléphone n'a pas de NFC, ou le navigateur n'y a pas accès."],
+      NotReadableError: ['NFC désactivé', "Active le NFC dans les réglages du téléphone, puis réessaie."],
+      SecurityError: ['Page non autorisée', "La page doit être ouverte en https, directement (pas dans un cadre)."],
+    }[name] || ['Lecture impossible', `${esc(name || 'Erreur')}\u00A0: ${esc((e && e.message) || '')}`];
+    setState('bad', msg[0], msg[1]);
+  }
+
+  async function startScan() {
+    stopScan();
+    ctl = new AbortController();
+    setState('idle', 'Démarrage…', '');
+    try {
+      const reader = new NDEFReader();
+      reader.addEventListener('reading', (ev) => showRead(ev.serialNumber));
+      reader.addEventListener('readingerror', () => setState('bad', 'Carte détectée, mais illisible',
+        "Le téléphone voit une puce, mais le navigateur ne sait pas la lire. C'est typique des cartes <b>MIFARE Classic</b> (celles des kits RC522\u00A0: carte blanche, badge bleu)\u00A0: Chrome ne lit que les puces au format NDEF, comme les NTAG213 ou NTAG215."));
+      await reader.scan({ signal: ctl.signal });
+      go.textContent = 'Arrêter';
+      setState('waiting', "Approche une carte du dos du téléphone", "Près de l'antenne, souvent en haut du téléphone.");
+    } catch (e) { onScanError(e); }
+  }
+
+  go.addEventListener('click', () => {
+    if (ctl) { stopScan(); setState('idle', 'Lecture arrêtée', ''); } else { startScan(); }
+  });
+  $('#copy').addEventListener('click', async (ev) => {
+    const b = ev.currentTarget, id = $('#r-id').textContent;
+    try { await navigator.clipboard.writeText(id); b.textContent = 'Copié ✓'; } catch (e) { b.textContent = 'Sélectionne le nombre'; }
+    setTimeout(() => { b.textContent = 'Copier'; }, 1600);
+  });
+
+  /* ── Outils ───────────────────────────────────────────────────────────────── */
+  $('#uid-in').addEventListener('input', (ev) => {
+    const out = $('#uid-out'), v = ev.target.value;
+    out.classList.remove('bad');
+    if (!v.trim()) { out.textContent = ''; return; }
+    const bytes = parseUid(v), id = cardId(bytes);
+    if (!id) { out.classList.add('bad'); out.textContent = 'Numéro invalide\u00A0: 4, 7 ou 10 octets en hexadécimal (ex. 04:A1:B2:C3).'; return; }
+    out.innerHTML = `ID du CSV\u00A0: <b class="m">${id}</b>` + (bytes.length > 4 ? `<br>Puce à ${bytes.length} octets\u00A0: seuls les 3 premiers (${fmtUid(bytes.slice(0, 3))}) sont pris en compte.` : '');
+  });
+  $('#id-in').addEventListener('input', (ev) => {
+    const out = $('#id-out'), v = ev.target.value;
+    out.classList.remove('bad');
+    if (!v.trim()) { out.textContent = ''; return; }
+    const r = decodeId(v);
+    if (r.error) { out.classList.add('bad'); out.textContent = r.error; return; }
+    out.innerHTML = r.long
+      ? `Puce à <b>7 octets ou plus</b> (type NTAG, Ultralight…)\u00A0: le lecteur ne voit que ses 3 premiers octets, <b class="m">${fmtUid(r.bytes)}</b>. Ces puces sont souvent lisibles par Chrome sur Android.`
+      : `Numéro de série à <b>4 octets</b>\u00A0: <b class="m">${fmtUid(r.bytes)}</b>. C'est typiquement une carte <b>MIFARE Classic 1K</b>\u00A0: fais le test ci-dessus pour savoir si ton téléphone la lit.`;
+  });
+})();
+</script>
+</body>
+</html>
